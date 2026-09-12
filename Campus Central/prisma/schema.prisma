@@ -1,0 +1,198 @@
+// Prisma schema for CampusCentral - Modular Monolith Student Journey Platform (SQLite / PostgreSQL compatible)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password_hash String
+  first_name    String
+  last_name     String
+  role          String   @default("STUDENT") // STUDENT | FACULTY | ADMIN
+  department    String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  taught_courses      Course[]               @relation("FacultyCourses")
+  enrollments         CourseEnrollment[]
+  attendance_sessions AttendanceSession[]    @relation("FacultySessions")
+  attendance_records  AttendanceRecord[]
+  submissions         AssignmentSubmission[]
+  deadlines           Deadline[]
+  authored_notices    Notice[]               @relation("AuthoredNotices")
+  created_events      CalendarEvent[]        @relation("CreatedEvents")
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  course_code String
+  title       String
+  faculty_id  String
+  department  String
+  created_at  DateTime @default(now())
+
+  faculty             User                @relation("FacultyCourses", fields: [faculty_id], references: [id], onDelete: Cascade)
+  enrollments         CourseEnrollment[]
+  attendance_sessions AttendanceSession[]
+  assignments         Assignment[]
+  exams               Exam[]
+  deadlines           Deadline[]
+  notices             Notice[]
+  calendar_events     CalendarEvent[]
+
+  @@index([faculty_id])
+}
+
+model CourseEnrollment {
+  id         String   @id @default(cuid())
+  student_id String
+  course_id  String
+  created_at DateTime @default(now())
+
+  student User   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  course  Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([student_id, course_id])
+  @@index([student_id])
+  @@index([course_id])
+}
+
+model AttendanceSession {
+  id           String   @id @default(cuid())
+  course_id    String
+  faculty_id   String
+  session_date DateTime
+  start_time   String
+  end_time     String
+  created_at   DateTime @default(now())
+
+  course  Course             @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  faculty User               @relation("FacultySessions", fields: [faculty_id], references: [id], onDelete: Cascade)
+  records AttendanceRecord[]
+
+  @@index([course_id])
+  @@index([faculty_id])
+}
+
+model AttendanceRecord {
+  id         String   @id @default(cuid())
+  session_id String
+  student_id String
+  status     String   @default("PRESENT") // PRESENT | ABSENT | LATE | EXCUSED
+
+  session AttendanceSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  student User              @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, student_id])
+  @@index([session_id])
+  @@index([student_id])
+}
+
+model Assignment {
+  id           String   @id @default(cuid())
+  course_id    String
+  title        String
+  instructions String
+  max_score    Float
+  due_date     DateTime
+  created_at   DateTime @default(now())
+
+  course      Course                 @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  submissions AssignmentSubmission[]
+
+  @@index([course_id])
+}
+
+model AssignmentSubmission {
+  id            String   @id @default(cuid())
+  assignment_id String
+  student_id    String
+  file_url      String
+  submitted_at  DateTime @default(now())
+  status        String   @default("SUBMITTED") // PENDING | SUBMITTED | GRADED
+  score         Float?
+  feedback      String?
+
+  assignment Assignment @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  student    User       @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([assignment_id, student_id])
+  @@index([assignment_id])
+  @@index([student_id])
+}
+
+model Exam {
+  id         String   @id @default(cuid())
+  course_id  String
+  title      String
+  exam_date  DateTime
+  priority   String   @default("HIGH") // LOW | MEDIUM | HIGH | URGENT
+  created_at DateTime @default(now())
+
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@index([course_id])
+}
+
+model Deadline {
+  id           String   @id @default(cuid())
+  user_id      String
+  course_id    String?
+  title        String
+  due_date     DateTime
+  priority     String   @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  is_completed Boolean  @default(false)
+  created_at   DateTime @default(now())
+
+  user   User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [course_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([course_id])
+}
+
+model Notice {
+  id           String   @id @default(cuid())
+  author_id    String
+  title        String
+  content      String
+  target_scope String   @default("ALL") // ALL | COURSE | DEPARTMENT
+  course_id    String?
+  department   String?
+  is_pinned    Boolean  @default(false)
+  created_at   DateTime @default(now())
+
+  author User    @relation("AuthoredNotices", fields: [author_id], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [course_id], references: [id], onDelete: SetNull)
+
+  @@index([author_id])
+  @@index([course_id])
+}
+
+model CalendarEvent {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  event_type   String    @default("OTHER") // HOLIDAY | MEETING | EXTRA_CLASS | CANCELLATION | OTHER
+  start_at     DateTime
+  end_at       DateTime?
+  target_scope String    @default("ALL")   // ALL | COURSE | DEPARTMENT
+  course_id    String?
+  department   String?
+  created_by   String
+  created_at   DateTime  @default(now())
+
+  course  Course? @relation(fields: [course_id], references: [id], onDelete: SetNull)
+  creator User    @relation("CreatedEvents", fields: [created_by], references: [id], onDelete: Cascade)
+
+  @@index([course_id])
+  @@index([created_by])
+}
+
